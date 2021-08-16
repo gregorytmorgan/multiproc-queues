@@ -1,5 +1,5 @@
 #
-#
+# Usage: python3 main.py, use ctrl-c to exit
 #
 
 import os
@@ -12,7 +12,7 @@ import string
 from pathlib import Path
 from queue import Empty, Full
 from signal import signal, SIGINT, SIGTERM, SIG_IGN
-from multiprocessing import Process, Event, current_process, Queue
+from multiprocessing import Process, Event, current_process
 
 # logging config
 app_name = Path(__file__).stem
@@ -29,7 +29,7 @@ producer_procs = {}
 consumer_procs = {}
 
 sleep_time = 0.5
-queue_size = 2
+queue_size = 4
 producer_worker_count = 2
 consumer_worker_count = 1
 
@@ -64,7 +64,7 @@ def producer(halt_producer, queue):
         log.error("producer {} - {}".format(pid, e))
         raise e
 
-    log.debug("producer exited on pid {}".format(current_process().pid))
+    log.debug("producer {} exited".format(current_process().pid))
 
     sys.exit(0)
 
@@ -95,7 +95,7 @@ def consumer(halt_consumer, queue):
         log.error("consumer {} - {}".format(pid, e))
         raise e
 
-    log.debug("consumer exited on pid {}".format(pid))
+    log.debug("consumer {} exited".format(pid))
 
     sys.exit(0)
 
@@ -156,7 +156,16 @@ def main():
 
     log.debug("{} started on pid {}".format(os.path.basename(__file__), os.getpid()))
 
-    queue = Queue(queue_size)
+    # from multiprocessing import Queue
+    # queue = Queue(queue_size)
+
+    #
+    # OR
+    #
+
+    from multiprocessing import Manager
+    manager = Manager()
+    queue = manager.Queue(queue_size)
 
     # start producers
     for n in range(0, producer_worker_count):
@@ -176,7 +185,7 @@ def main():
         time.sleep(.1)
         log.debug("started {} on pid {}".format(p_name, p_consumer.pid))
 
-    # wait for process to finish
+    # wait for all processes to finish
     while True:
         for p in list(producer_procs.values()) + list(consumer_procs.values()):
             if p.is_alive():
