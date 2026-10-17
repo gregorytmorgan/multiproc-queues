@@ -57,6 +57,7 @@ def producer(halt_producer, queue):
                 log.debug("producer {} PUT {}...{}".format(pid, "".join(chars[:4]), "".join(chars[-4:])))
             except Full:
                 log.debug("FULL")
+                queue.join()
 
             time.sleep(sleep_time)
 
@@ -86,6 +87,8 @@ def consumer(halt_consumer, queue):
             try:
                 chars = queue.get_nowait()
                 log.debug("consumer {} GET {}...{}".format(pid, chars[:4], chars[-4:]))
+                if hasattr(queue, 'task_done'):
+                    queue.task_done()
             except Empty:
                 log.debug("EMPTY")
 
@@ -103,6 +106,9 @@ def consumer(halt_consumer, queue):
 def shutdown():
     global halt_producer
     global halt_consumer
+
+    if halt_producer.is_set() or halt_consumer.is_set():
+        return
 
     # start pruducer shutdown
     halt_producer.set()
@@ -151,21 +157,42 @@ def main():
     global producer_procs
     global consumer_procs
 
+    print("{} producer(s) put 1 MB random strings on a JoinableQueue (max size {}); {} consumer(s) take them off.".format(
+        producer_worker_count, queue_size, consumer_worker_count))
+    print("When the queue is full, a producer waits (queue.join()) until the consumer drains the queue. Output is also logged to {}.".format(log_file))
+    print("Press ctrl-c to stop: producers shut down first, then consumers.")
+    try:
+        input("Press Enter to start...")
+    except (KeyboardInterrupt, EOFError):
+        print()
+        sys.exit(0)
+
     for signame in [SIGINT, SIGTERM]:
         signal(signame, main_signal_handler)
 
     log.debug("{} started on pid {}".format(os.path.basename(__file__), os.getpid()))
 
-    # from multiprocessing import Queue
-    # queue = Queue(queue_size)
+    #
+    # init the queue
+    #
+
+    #from multiprocessing import Queue
+    #queue = Queue(queue_size)
 
     #
     # OR
     #
 
-    from multiprocessing import Manager
-    manager = Manager()
-    queue = manager.Queue(queue_size)
+    # from multiprocessing import Manager
+    # manager = Manager()
+    # queue = manager.Queue(queue_size)
+
+    #
+    # or
+    #
+
+    from multiprocessing import JoinableQueue
+    queue = JoinableQueue(queue_size)
 
     # start producers
     for n in range(0, producer_worker_count):
@@ -186,12 +213,16 @@ def main():
         log.debug("started {} on pid {}".format(p_name, p_consumer.pid))
 
     # wait for all processes to finish
-    while True:
-        for p in list(producer_procs.values()) + list(consumer_procs.values()):
-            if p.is_alive():
-                break
-        if not p.is_alive():  # did we reach the end of the proc list?
-            break
+
+    for p in list(producer_procs.values()) + list(consumer_procs.values()):
+        p.join()
+
+    # while True:
+    #     for p in list(producer_procs.values()) + list(consumer_procs.values()):
+    #         if p.is_alive():
+    #             break
+    #     if not p.is_alive():  # did we reach the end of the proc list?
+    #         break
 
     log.debug("main exit")
 
